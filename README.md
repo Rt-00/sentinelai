@@ -18,10 +18,16 @@ Multi-Agent Security Assistant powered by LangGraph + Ollama. A system of collab
         └──────────┘ └──────────┘ └──────────┘
 ```
 
-- **Supervisor** — routes input to the appropriate agent via conditional edges *(planned)*
-- **Code Analyzer** — analyzes source code for security vulnerabilities and code smells
-- **Vuln Scanner** — queries a CVE knowledge base using semantic search *(planned)*
-- **Report Writer** — consolidates findings into a structured security report *(planned)*
+**Phase 2 graph flow (linear):**
+```
+START → intake → analyze_code → synthesize → END
+```
+
+- **intake** — validates the scan input and routes to the appropriate agent
+- **analyze_code** — runs the Code Analyzer chain and produces structured findings
+- **synthesize** — formats findings into a human-readable security report
+- **Supervisor** — conditional routing across multiple agents *(Phase 3)*
+- **Vuln Scanner** — queries a CVE knowledge base using semantic search *(Phase 4)*
 
 ## Tech Stack
 
@@ -29,7 +35,7 @@ Multi-Agent Security Assistant powered by LangGraph + Ollama. A system of collab
 |---|---|
 | LLM Provider | Ollama (local, qwen2.5-coder:7b) |
 | LLM Framework | LangChain |
-| Agent Orchestration | LangGraph *(Phase 2)* |
+| Agent Orchestration | LangGraph |
 | Vector Store | ChromaDB *(Phase 4)* |
 | API | FastAPI *(Phase 5)* |
 | Validation | Pydantic v2 |
@@ -42,7 +48,8 @@ Multi-Agent Security Assistant powered by LangGraph + Ollama. A system of collab
 sentinelai/
 ├── pyproject.toml
 ├── scripts/
-│   └── test_chain.py              # Manual test script
+│   ├── test_chain.py              # Manual test: code analyzer chain only
+│   └── test_graph.py              # Manual test: full LangGraph execution
 ├── src/
 │   └── sentinelai/
 │       ├── domain/
@@ -55,10 +62,14 @@ sentinelai/
 │       │       └── llm_port.py         # LLM abstraction (interface)
 │       ├── application/
 │       │   └── services/
-│       │       └── code_analyzer.py    # First chain: code → findings
+│       │       └── code_analyzer.py    # Code → findings chain
 │       └── infrastructure/
-│           └── llm/
-│               └── ollama_adapter.py   # LangChain ChatOllama adapter
+│           ├── llm/
+│           │   └── ollama_adapter.py   # LangChain ChatOllama adapter
+│           └── graph/
+│               ├── state.py            # AgentState + ScanInput (Pydantic)
+│               ├── nodes.py            # GraphNodes: intake, analyze_code, synthesize
+│               └── builder.py          # Graph builder + compile_graph()
 └── tests/
 ```
 
@@ -83,35 +94,63 @@ uv sync
 # Pull the LLM model
 ollama pull qwen2.5-coder:7b
 
-# Run the code analyzer
+# Run the full graph
+uv run python scripts/test_graph.py
+
+# Or run the code analyzer chain only
 uv run python scripts/test_chain.py
 ```
 
 ## Example Output
 
-The test script analyzes a deliberately vulnerable Flask login endpoint (SQL injection, plaintext passwords, no rate limiting) and returns structured findings:
+The test script runs a deliberately vulnerable Flask app (insecure deserialization, command injection, XSS, missing security configs, no logging) through the full graph:
 
 ```
-Analyzing code for vulnerabilities...
+Running SentinelAI graph...
 
-Summary: Multiple critical security issues found in authentication endpoint.
+============================================================
 
-Found 3 findings:
+[Node: intake]
+  Status: analyzing
+  Scan intake complete. Routing to Code Analyzer.
 
-[CRITICAL] SQL Injection in Login Query
-   Location: login() — line 12
-   User input is directly interpolated into SQL query string.
-   Fix: Use parameterized queries with cursor.execute("SELECT ... WHERE username = ?", (username,))
+[Node: analyze_code]
+  Status: analyzed
+  Analysis complete: found 5 issues (2) critical/high severity.
 
-[HIGH] Plaintext Password Storage
-   Location: login() — password comparison
-   Passwords are stored and compared in plaintext without hashing.
-   Fix: Use bcrypt or argon2 for password hashing.
+[Node: synthesize]
+  Status: completed
+  ## Security Scan Report
 
-[MEDIUM] No Rate Limiting on Auth Endpoint
-   Location: /login route
-   No protection against brute-force attacks.
-   Fix: Implement rate limiting with flask-limiter.
+**Summary:** The provided Flask web app has several security vulnerabilities that could be exploited by attackers.
+
+🔴 **[HIGH] Insecure deserialization**
+   Location: /upload
+   The `upload` function uses `pickle.loads()` to deserialize data received from the client.
+   **Fix:** Avoid using `pickle` for deserializing untrusted data. Use JSON instead.
+
+🔴 **[HIGH] Command injection**
+   Location: /run
+   The `run_command` function executes user-provided commands directly using `os.popen()`.
+   **Fix:** Use `subprocess.run()` with proper argument handling and validation.
+
+🟡 **[MEDIUM] Cross-site scripting (XSS)**
+   Location: /profile
+   User input is included in the HTML response without sanitization.
+   **Fix:** Sanitize and escape user input before rendering.
+
+🟡 **[MEDIUM] Security misconfigurations**
+   Location: /
+   No HTTPS or CORS headers configured.
+   **Fix:** Implement HTTPS and configure CORS appropriately.
+
+🟡 **[MEDIUM] Insufficient logging**
+   Location: /
+   No logging configured, making it hard to detect breaches.
+   **Fix:** Configure logging to capture errors and access attempts.
+
+============================================================
+Graph execution complete.
 ```
 
 *(actual output varies by model)*
@@ -119,6 +158,8 @@ Found 3 findings:
 ## Design Decisions
 
 - **Clean Architecture** — Domain entities are pure Python dataclasses with no framework dependencies. The `LLMPort` abstract class defines the contract; `OllamaAdapter` implements it via LangChain. Swapping to a different provider means writing a new adapter, nothing else changes.
+- **LangGraph State** — `AgentState` is a Pydantic `BaseModel` with `Annotated` message list using `add_messages` reducer. Nodes return partial dicts that are merged into the state automatically.
+- **Async Nodes** — All graph nodes are `async`, enabling concurrent execution in future phases.
 - **Structured Output** — The analyzer uses `with_structured_output()` to get Pydantic-validated responses from the LLM, ensuring type-safe findings.
 - **Immutable Entities** — All domain entities use `frozen=True` dataclasses for safety and predictability.
 - **Ollama (Local)** — Full privacy. No data leaves your machine.
@@ -126,7 +167,7 @@ Found 3 findings:
 ## Roadmap
 
 - [x] **Phase 1** — LangChain + Ollama foundation, domain entities, first chain (Code Analyzer)
-- [ ] **Phase 2** — LangGraph basics: `AgentState`, `StateGraph`, Code Analyzer as a node
+- [x] **Phase 2** — LangGraph basics: `AgentState`, `StateGraph`, Code Analyzer as a node
 - [ ] **Phase 3** — Multi-agent orchestration with Supervisor routing + conditional edges
 - [ ] **Phase 4** — RAG pipeline: CVE ingestion into ChromaDB, semantic retrieval, reranking
 - [ ] **Phase 5** — FastAPI endpoints, SSE streaming, LangSmith tracing, tests
