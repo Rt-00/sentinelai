@@ -6,8 +6,13 @@ from sentinelai.domain.ports.llm_port import LLMPort
 
 
 class OllamaAdapter(LLMPort):
-    def __init__(self, model: str = "qwen2.5-coder:7b", temperature: float = 0.0) -> None:
-        self._llm = ChatOllama(model=model, temperature=temperature)
+    def __init__(
+        self,
+        model: str = "qwen2.5-coder:7b",
+        temperature: float = 0.0,
+        num_predict: int = 2048,
+    ) -> None:
+        self._llm = ChatOllama(model=model, temperature=temperature, num_predict=num_predict)
 
     async def invoke(self, prompt: str) -> str:
         response = await self._llm.ainvoke([HumanMessage(content=prompt)])
