@@ -1,5 +1,4 @@
-```markdown
-# SentinelAI 🛡️
+# SentinelAI
 
 Multi-Agent Security Assistant powered by LangGraph + Ollama. A system of collaborative AI agents that analyzes source code for security vulnerabilities, maps known CVEs, and generates structured security reports — all running locally with full privacy.
 
@@ -75,7 +74,7 @@ The domain layer has **zero external dependencies** — no LangChain, no Pydanti
 
 ```bash
 # Clone the repo
-git clone https://github.com/rt-00/sentinelai.git
+git clone https://github.com/Rt-00/sentinelai.git
 cd sentinelai
 
 # Install dependencies
@@ -99,17 +98,17 @@ Summary: Multiple critical security issues found in authentication endpoint.
 
 Found 3 findings:
 
-🔴 [CRITICAL] SQL Injection in Login Query
+[CRITICAL] SQL Injection in Login Query
    Location: login() — line 12
    User input is directly interpolated into SQL query string.
    Fix: Use parameterized queries with cursor.execute("SELECT ... WHERE username = ?", (username,))
 
-🔴 [HIGH] Plaintext Password Storage
+[HIGH] Plaintext Password Storage
    Location: login() — password comparison
    Passwords are stored and compared in plaintext without hashing.
    Fix: Use bcrypt or argon2 for password hashing.
 
-🟡 [MEDIUM] No Rate Limiting on Auth Endpoint
+[MEDIUM] No Rate Limiting on Auth Endpoint
    Location: /login route
    No protection against brute-force attacks.
    Fix: Implement rate limiting with flask-limiter.
@@ -135,4 +134,3 @@ Found 3 findings:
 ## License
 
 MIT
-```
